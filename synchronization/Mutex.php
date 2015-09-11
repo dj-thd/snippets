@@ -32,6 +32,13 @@ class Mutex
     private $key_name;
     
     /**
+     * Holds unique id for the current instance that is generated on constructor
+     * @var string
+     * @internal
+     */
+    private $current_instance_identifier;
+    
+    /**
      * Maximum TTL for the lock
      * @var integer
      */
@@ -53,6 +60,7 @@ class Mutex
         $this->mutex_name = $mutex_name;
         $this->key_name = "//mutex/$mutex_name";
         $this->max_ttl = intval($max_ttl);
+        $this->current_instance_identifier = md5(mt_rand().mt_rand().mt_rand()); // Generate unique identifier
     }
     
     /**
@@ -126,6 +134,15 @@ class Mutex
                 }
             }
         }
+        
+        // Lock is acquired, then store instance identifier and set expiration if applicable
+        if($result) {
+            $this->redis->set($this->key_name.'_instance', $this->current_instance_identifier);
+            if($this->max_ttl) {
+                $this->redis->expire($this->key_name.'_instance', $this->max_ttl);
+            }
+        }
+        
         return $result;
     }
     
@@ -134,7 +151,10 @@ class Mutex
      */
     public function unlock()
     {
-        $this->redis->del($this->key_name);
+        if($this->redis->get($this->key_name.'_instance') === $this->current_instance_identifier) {
+            $this->redis->del($this->key_name.'_instance');
+            $this->redis->del($this->key_name);
+        }
     }
     
     /**
